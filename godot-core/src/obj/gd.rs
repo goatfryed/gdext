@@ -9,6 +9,7 @@ use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::ops::{Deref, DerefMut};
 
 use godot_ffi as sys;
+use godot_ffi::is_main_thread;
 use sys::{static_assert_eq_size_align, SysPtr as _};
 
 use crate::builtin::{Callable, NodePath, StringName, Variant};
@@ -442,6 +443,25 @@ impl<T: GodotClass> Gd<T> {
                 to = Derived::class_name(),
             )
         })
+    }
+
+    /// Runs the given Closure deferred.
+    ///
+    /// This can be a type-safe alternative to [`classes::Object::call_deferred`], but does not handle dynamic dispatch, unless explicitly used.
+    /// This must be used on the main thread.
+    #[cfg(since_api = "4.2")]
+    pub fn apply_deferred<F>(&mut self, mut rust_function: F)
+    where
+        F: FnMut(&mut T) + 'static,
+        T: GodotClass + Bounds<Declarer = bounds::DeclUser>,
+    {
+        assert!(!is_main_thread(), "apply_deferred must be called on main thread. Consider bind_deferred instead");
+        let this = self.clone();
+        let callable = Callable::from_local_fn("apply_deferred", move |_| {
+            rust_function(this.clone().bind_mut().deref_mut());
+            Ok(Variant::nil())
+        });
+        callable.call_deferred(&[]);
     }
 
     /// Returns `Ok(cast_obj)` on success, `Err(self)` on error.
