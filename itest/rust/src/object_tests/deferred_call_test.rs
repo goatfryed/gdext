@@ -84,3 +84,18 @@ fn calls_closure_deferred(ctx: &crate::framework::TestContext) -> TaskHandle {
     let handle = test_node.bind().as_expectation_task();
     handle
 }
+
+#[itest(async,focus)]
+#[cfg(feature = "experimental-threads")]
+fn hands_out_thread_safe_call_to_main_thread(ctx: &crate::framework::TestContext) -> TaskHandle {
+    let mut test_node = DeferredTestNode::new_alloc();
+    ctx.scene_tree.clone().add_child(&test_node);
+
+    let mut accept_save = test_node.bind_deferred(DeferredTestNode::accept);
+    std::thread::spawn(move || {
+        accept_save();
+    });
+
+    let handle = test_node.bind().as_expectation_task();
+    handle
+}

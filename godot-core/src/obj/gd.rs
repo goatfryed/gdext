@@ -7,7 +7,7 @@
 
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::ops::{Deref, DerefMut};
-
+use std::sync::{Arc, Mutex};
 use godot_ffi as sys;
 use godot_ffi::is_main_thread;
 use sys::{static_assert_eq_size_align, SysPtr as _};
@@ -462,6 +462,31 @@ impl<T: GodotClass> Gd<T> {
             Ok(Variant::nil())
         });
         callable.call_deferred(&[]);
+    }
+
+    #[cfg(since_api = "4.2")]
+    #[cfg(feature = "experimental-threads")]
+    pub fn bind_deferred<F>(&mut self, rust_function: F) -> Box<dyn FnMut() + Send + 'static>
+    where
+        F: FnMut(&mut T) + Send + 'static,
+        T: GodotClass + Bounds<Declarer = bounds::DeclUser>,
+    {
+        let instance_id = self.instance_id();
+        let rust_function_arc = Arc::new(Mutex::new(rust_function));
+        
+        let func = move || {
+            
+            let instance_id = instance_id.clone();
+            let rust_function = rust_function_arc.clone();
+            
+            let callable = Callable::from_sync_fn("apply_deferred", move |_| {
+                let mut this: Gd<T> = Gd::from_instance_id(instance_id);
+                rust_function.lock().unwrap()(this.bind_mut().deref_mut());
+                Ok(Variant::nil())
+            });
+            callable.call_deferred(&[]);
+        };
+        Box::new(func)
     }
 
     /// Returns `Ok(cast_obj)` on success, `Err(self)` on error.
